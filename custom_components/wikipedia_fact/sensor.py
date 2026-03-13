@@ -1,11 +1,16 @@
+import logging
+from datetime import date, timedelta
+
 from homeassistant.helpers.entity import Entity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .wikipedia_api import get_wikipedia_fact
-from datetime import date
 
 DOMAIN = "wikipedia_fact"
+SCAN_INTERVAL = timedelta(hours=24)
+
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(hass: HomeAssistant, config_entry: ConfigEntry, async_add_entities):
     """Configurer le capteur via une entrée de configuration."""
@@ -46,13 +51,15 @@ class WikipediaFactSensor(Entity):
         if self._last_update == today:
             return
 
-        self._last_update = today
-
         result = await get_wikipedia_fact(self._language)
 
         if "error" in result:
+            _LOGGER.warning("Wikipedia Fact sensor error: %s", result["error"])
             self._state = f"Erreur : {result['error']}"
             return
+
+        # Marquer la mise à jour seulement après un fetch réussi
+        self._last_update = today
 
         # Définir un résumé court pour l'état et des détails dans les attributs
         self._state = result["resume"]  # Résumé limité à 100 caractères

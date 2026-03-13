@@ -1,9 +1,14 @@
 """Module utilitaire pour l'API Wikipedia."""
 
+import asyncio
+import logging
 import aiohttp
 import random
 from datetime import date
 
+_LOGGER = logging.getLogger(__name__)
+
+REQUEST_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 def validate_language(language: str) -> None:
     """Valider que la langue n'est pas vide.
@@ -91,10 +96,17 @@ async def get_wikipedia_fact(language: str) -> dict:
     }
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as response:
-            if response.status != 200:
-                print(response)
-                return {"error": f"Erreur HTTP {response.status}"}
+        try:
+            async with session.get(url, headers=headers, timeout=REQUEST_TIMEOUT) as response:
+                if response.status != 200:
+                    _LOGGER.warning("Wikipedia API returned HTTP %s for URL: %s", response.status, url)
+                    return {"error": f"Erreur HTTP {response.status}"}
 
-            data = await response.json()
-            return parse_wikipedia_response(data)
+                data = await response.json()
+                return parse_wikipedia_response(data)
+        except asyncio.TimeoutError:
+            _LOGGER.warning("Wikipedia API request timed out for URL: %s", url)
+            return {"error": "Délai d'attente dépassé"}
+        except aiohttp.ClientError as err:
+            _LOGGER.warning("Wikipedia API network error: %s", err)
+            return {"error": f"Erreur réseau : {err}"}
