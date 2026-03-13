@@ -1,9 +1,9 @@
-import aiohttp
-import random
-from datetime import date
 from homeassistant.helpers.entity import Entity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+
+from .wikipedia_api import get_wikipedia_fact
+from datetime import date
 
 DOMAIN = "wikipedia_fact"
 
@@ -41,49 +41,23 @@ class WikipediaFactSensor(Entity):
         return "mdi:book-open-page-variant"
 
     async def async_update(self):
-        today = date.today()
-
         # Ne mettre à jour que si la date a changé
+        today = date.today()
         if self._last_update == today:
             return
 
         self._last_update = today
-        month = today.strftime("%m")
-        day = today.strftime("%d")
-        url = f"https://{self._language}.wikipedia.org/api/rest_v1/feed/onthisday/events/{month}/{day}"
 
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.get(url) as response:
-                    if response.status != 200:
-                        self._state = f"Erreur HTTP {response.status}"
-                        return
+        result = await get_wikipedia_fact(self._language)
 
-                    data = await response.json()
-                    events = data.get("events", [])
+        if "error" in result:
+            self._state = f"Erreur : {result['error']}"
+            return
 
-                    if not events:
-                        self._state = "Aucun événement trouvé."
-                        return
-
-                    # Choisir un événement aléatoire
-                    event = random.choice(events)
-                    year = event.get("year", "Année inconnue")
-                    text = event.get("text", "Description indisponible")
-                    pages = event.get("pages", [])
-                    link = (
-                        pages[0].get("content_urls", {}).get("desktop", {}).get("page", "")
-                        if pages
-                        else None
-                    )
-
-                    # Définir un résumé court pour l'état et des détails dans les attributs
-                    self._state = f"En {year}: {text[:100]}..."  # Résumé limité à 100 caractères
-                    self._attributes = {
-                        "texte_complet": f"En {year}: {text}",
-                        "lien": link,
-                        "année": year,
-                    } if link else {"texte_complet": f"En {year}: {text}", "année": year}
-
-        except Exception as e:
-            self._state = f"Erreur : {str(e)}"
+        # Définir un résumé court pour l'état et des détails dans les attributs
+        self._state = result["resume"]  # Résumé limité à 100 caractères
+        self._attributes = {
+            "texte_complet": result["texte_complet"],
+            "lien": result.get("lien"),
+            "année": result["annee"],
+        } if result.get("lien") else {"texte_complet": result["texte_complet"], "année": result["annee"]}
